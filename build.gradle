@@ -10,9 +10,3 @@ buildscript {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
-
-// The 'allprojects' block was removed to fix the conflict
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
-}
