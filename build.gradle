@@ -11,12 +11,7 @@ buildscript {
     }
 }
 
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
+// The 'allprojects' block was removed to fix the conflict
 
 task clean(type: Delete) {
     delete rootProject.buildDir
