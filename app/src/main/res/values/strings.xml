@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Automation Assistant</string>
+    
+    <string name="accessibility_service_description">
+        This service allows the AI Automation Assistant to perform automated touch actions and gestures on your behalf.
+        \n\nThe service can:
+        \n• Tap, swipe, and perform gestures
+        \n• Read screen content for pattern recognition
+        \n• Execute learned automation sequences
+        \n\nYour privacy is important. All data is stored locally on your device and never transmitted elsewhere.
+    </string>
+    
+    <string name="notification_channel_name">Automation Service</string>
+    <string name="notification_channel_description">Notifications for automation service status</string>
+    
+    <string name="service_running">AI Automation is running</string>
+    <string name="service_stopped">AI Automation stopped</string>
+    
+    <string name="learning_mode_on">Learning Mode Active</string>
+    <string name="learning_mode_off">Learning Mode Stopped</string>
+    
+    <string name="auto_mode_on">Auto Mode Active</string>
+    <string name="auto_mode_off">Auto Mode Stopped</string>
+    
+    <string name="permission_overlay_required">Overlay permission is required for the floating widget</string>
+    <string name="permission_accessibility_required">Accessibility permission is required for automation</string>
+    <string name="permission_notification_required">Notification permission is recommended</string>
+</resources>
