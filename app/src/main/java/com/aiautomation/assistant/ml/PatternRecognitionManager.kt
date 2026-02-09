@@ -14,23 +14,21 @@ import kotlin.math.abs
 class PatternRecognitionManager(private val context: Context) {
 
     /**
-     * MAIN BRAIN: Analyzes the screen for Domino Matches
+     * MAIN BRAIN: Analyzes the screen for matches
      */
     suspend fun analyzeScreen(bitmap: Bitmap, uiNodes: List<UIContextNode>): ActionSequence? {
         return withContext(Dispatchers.Default) {
             
-            // 1. First, check for System/Menu popups (Play, Continue, etc.)
-            // We prioritize this so the AI doesn't get stuck on "Level Complete" screens.
+            // 1. Check for Menu Buttons (Play, Continue, etc.)
+            // We prioritize text buttons to navigate menus automatically.
             val smartAction = findSmartAction(uiNodes)
             if (smartAction != null) {
-                Log.d("AI_BRAIN", "Menu Action Found: ${smartAction.text}")
                 return@withContext smartAction
             }
 
-            // 2. DOMINO LOGIC: Hand-to-Board Matching
+            // 2. Check for Domino Matches (Hand-to-Board)
             val matchAction = findDominoMatch(bitmap)
             if (matchAction != null) {
-                Log.d("AI_BRAIN", "Domino Match Found at ${matchAction.x}, ${matchAction.y}")
                 return@withContext matchAction
             }
             
@@ -38,9 +36,6 @@ class PatternRecognitionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Looks for clickable Menu Buttons
-     */
     private fun findSmartAction(nodes: List<UIContextNode>): ActionSequence? {
         val targetKeywords = listOf(
             "Play", "Level", "Claim", "Collect", "No Thanks", "Tap to Start", "Retry", "Free",
@@ -70,37 +65,29 @@ class PatternRecognitionManager(private val context: Context) {
     }
 
     /**
-     * DOMINO MATCHING ALGORITHM
-     * 1. Identify the color of the "Hand" tile (Bottom Center).
-     * 2. Scan the "Board" (Top) for that same color.
+     * DOMINO LOGIC: Finds a tile on the board that matches the color of the hand tile.
      */
     private fun findDominoMatch(bitmap: Bitmap): ActionSequence? {
         val width = bitmap.width
         val height = bitmap.height
         
-        // --- ZONE DEFINITIONS ---
-        // Hand Area: The single tile you play from (Bottom Center)
+        // ZONE 1: Hand (Bottom Center)
         val handX = width / 2
-        val handY = (height * 0.88).toInt() // Approx 88% down the screen
+        val handY = (height * 0.88).toInt() // Approx 88% down
         
-        // Board Area: The puzzle tiles (Top 75% of screen)
+        // ZONE 2: Board (Top 75%)
         val boardBottom = (height * 0.75).toInt()
         val boardTop = (height * 0.15).toInt()
 
         try {
-            // 1. GET HAND COLOR
-            // We sample a small box in the player's hand to find the "Active Color"
-            val handColor = getAverageColor(bitmap, handX, handY, 30)
+            // Get color of the player's current tile
+            val handColor = getAverageColor(bitmap, handX, handY, 40)
             
-            // If hand is too dark/black, maybe no tile is there? Skip.
-            if (handColor.brightness < 0.2f) {
-                Log.d("AI_BRAIN", "Hand is empty/dark. Waiting...")
-                return null
-            }
+            // If hand is empty (black/dark), do nothing
+            if (handColor.brightness < 0.2f) return null
 
-            // 2. SCAN BOARD FOR MATCH
-            // We scan the board in a grid looking for the Hand Color
-            val rows = 12 // Higher density scan for better accuracy
+            // Scan board for matching color
+            val rows = 12
             val cols = 8
             val cellW = width / cols
             val cellH = (boardBottom - boardTop) / rows
@@ -110,12 +97,9 @@ class PatternRecognitionManager(private val context: Context) {
                     val cx = c * cellW + (cellW / 2)
                     val cy = boardTop + r * cellH + (cellH / 2)
                     
-                    // Get color of this board section
-                    val boardColor = getAverageColor(bitmap, cx, cy, 20)
+                    val boardColor = getAverageColor(bitmap, cx, cy, 25)
                     
-                    // CHECK MATCH
                     if (areColorsSimilar(handColor, boardColor)) {
-                        // Found a tile on board with same color as hand!
                         return ActionSequence(
                             actionType = "CLICK",
                             x = cx.toFloat(),
@@ -123,7 +107,7 @@ class PatternRecognitionManager(private val context: Context) {
                             sequenceId = "domino_match",
                             orderInSequence = 0,
                             timestamp = System.currentTimeMillis(),
-                            text = "Found Match!",
+                            text = "Match Found!",
                             confidence = 0.95f
                         )
                     }
@@ -140,7 +124,6 @@ class PatternRecognitionManager(private val context: Context) {
         var rSum = 0L; var gSum = 0L; var bSum = 0L
         var count = 0
         
-        // Bounds checking
         val startX = (x - size/2).coerceIn(0, bitmap.width - 1)
         val endX = (x + size/2).coerceIn(0, bitmap.width - 1)
         val startY = (y - size/2).coerceIn(0, bitmap.height - 1)
@@ -157,25 +140,23 @@ class PatternRecognitionManager(private val context: Context) {
         }
         
         if (count == 0) return ColorSignature(0,0,0,0f)
-        
-        val r = (rSum / count).toInt()
-        val g = (gSum / count).toInt()
-        val b = (bSum / count).toInt()
-        val brightness = (0.299*r + 0.587*g + 0.114*b) / 255.0
-        
-        return ColorSignature(r, g, b, brightness.toFloat())
+        return ColorSignature(
+            (rSum/count).toInt(), 
+            (gSum/count).toInt(), 
+            (bSum/count).toInt(), 
+            ((rSum+gSum+bSum)/count)/765f // Brightness approx
+        )
     }
 
     private fun areColorsSimilar(c1: ColorSignature, c2: ColorSignature): Boolean {
-        // Threshold: 30 allows for slight lighting variations (glare, shadows)
+        // Threshold 35 allows for slight lighting/shadow differences
         val diff = abs(c1.r - c2.r) + abs(c1.g - c2.g) + abs(c1.b - c2.b)
-        return diff < 30 
+        return diff < 35 
     }
 
-    // Data Classes
     data class ColorSignature(val r: Int, val g: Int, val b: Int, val brightness: Float)
     
-    // Legacy stubs to satisfy interface
+    // Legacy stubs required by app structure
     suspend fun recognizePatterns(bitmap: Bitmap): List<RecognizedPattern> = emptyList()
     suspend fun updateModel(actions: List<ActionSequence>) {}
     suspend fun processFrame(bitmap: Bitmap) {}
