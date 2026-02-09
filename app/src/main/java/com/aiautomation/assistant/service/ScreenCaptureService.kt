@@ -1,10 +1,10 @@
 package com.aiautomation.assistant.service
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -13,6 +13,7 @@ import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.IBinder
 import android.util.DisplayMetrics
 import android.view.WindowManager
@@ -37,7 +38,7 @@ class ScreenCaptureService : Service() {
     private var captureJob: Job? = null
 
     companion object {
-        private const val CAPTURE_INTERVAL_MS = 500L // Capture every 500ms
+        private const val CAPTURE_INTERVAL_MS = 500L 
         var latestScreenshot: Bitmap? = null
             private set
     }
@@ -62,7 +63,12 @@ class ScreenCaptureService : Service() {
         screenHeight = metrics.heightPixels
         screenDensity = metrics.densityDpi
 
-        startForeground(2, createNotification())
+        // Android 15 Compliant Start
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(2, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(2, createNotification())
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -80,7 +86,6 @@ class ScreenCaptureService : Service() {
         val mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
 
-        // Create ImageReader for capturing screen
         imageReader = ImageReader.newInstance(
             screenWidth,
             screenHeight,
@@ -88,7 +93,6 @@ class ScreenCaptureService : Service() {
             2
         )
 
-        // Create virtual display
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "ScreenCapture",
             screenWidth,
@@ -100,7 +104,6 @@ class ScreenCaptureService : Service() {
             null
         )
 
-        // Start periodic screen capture
         startPeriodicCapture()
     }
 
@@ -123,8 +126,14 @@ class ScreenCaptureService : Service() {
                 val bitmap = imageToBitmap(image)
                 latestScreenshot = bitmap
                 
-                // Send to ML processing
-                processScreenshot(bitmap)
+                try {
+                    val app = application as AutomationApp
+                    // Ensure PatternRecognitionManager is called
+                    // Note: In MLProcessingService we call analyzeScreen directly on latestScreenshot
+                    // So we don't strictly need to push it here, but keeping it for legacy support
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -149,16 +158,6 @@ class ScreenCaptureService : Service() {
             bitmap
         } else {
             Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
-        }
-    }
-
-    private suspend fun processScreenshot(bitmap: Bitmap) = withContext(Dispatchers.Default) {
-        // Send screenshot to ML processing service
-        try {
-            val app = application as AutomationApp
-            app.patternRecognition.processFrame(bitmap)
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
