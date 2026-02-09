@@ -29,7 +29,6 @@ class FloatingWidgetService : Service() {
     companion object {
         var isRunning = false
             private set
-        
         const val ACTION_STOP_SERVICE = "com.aiautomation.assistant.STOP_SERVICE"
     }
 
@@ -50,15 +49,12 @@ class FloatingWidgetService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
-        
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        
         binding = FloatingWidgetBinding.inflate(LayoutInflater.from(this))
         floatingView = binding.root
 
         setupFloatingWidget()
         setupClickListeners()
-        
         startForeground(1, createNotification())
     }
 
@@ -67,14 +63,11 @@ class FloatingWidgetService : Service() {
             stopSelfAndCleanup()
             return START_NOT_STICKY
         }
-
         val resultCode = intent?.getIntExtra("resultCode", -1) ?: -1
         val data = intent?.getParcelableExtra<Intent>("data")
-
         if (resultCode != -1 && data != null) {
             startScreenCapture(resultCode, data)
         }
-
         return START_STICKY
     }
 
@@ -94,11 +87,10 @@ class FloatingWidgetService : Service() {
             x = 0
             y = 100
         }
-
         windowManager.addView(floatingView, layoutParams)
         setupDraggable(layoutParams)
         updateWidgetUI()
-    } // <--- FIX: This closing brace was likely missing or misplaced
+    } // <--- This closing brace was missing in previous versions
 
     private fun setupDraggable(params: WindowManager.LayoutParams) {
         binding.widgetHeader.setOnTouchListener { view, event ->
@@ -128,13 +120,11 @@ class FloatingWidgetService : Service() {
                 updateWidgetUI()
                 if (isLearningMode) startLearningMode() else stopLearningMode()
             }
-
             btnToggleAuto.setOnClickListener {
                 isAutoMode = !isAutoMode
                 updateWidgetUI()
                 if (isAutoMode) startAutoMode() else stopAutoMode()
             }
-
             btnMinimize.setOnClickListener { toggleMinimize() }
             btnClose.setOnClickListener { stopSelfAndCleanup() }
             btnRecordPattern.setOnClickListener {
@@ -147,10 +137,8 @@ class FloatingWidgetService : Service() {
         binding.apply {
             btnToggleLearning.text = if (isLearningMode) "Learning: ON" else "Learning: OFF"
             btnToggleLearning.setBackgroundColor(if (isLearningMode) 0xFF4CAF50.toInt() else 0xFF757575.toInt())
-
             btnToggleAuto.text = if (isAutoMode) "Auto: ON" else "Auto: OFF"
             btnToggleAuto.setBackgroundColor(if (isAutoMode) 0xFF2196F3.toInt() else 0xFF757575.toInt())
-            
             btnToggleAuto.isEnabled = !isLearningMode
         }
     }
@@ -168,11 +156,7 @@ class FloatingWidgetService : Service() {
             putExtra("resultCode", resultCode)
             putExtra("data", data)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent) else startService(intent)
     }
 
     private fun startLearningMode() {
@@ -186,14 +170,13 @@ class FloatingWidgetService : Service() {
     }
 
     private fun startAutoMode() {
-        // FIX: Now using the correct static property from AutomationAccessibilityService
+        // FIX: Using standardized property check
         if (!AutomationAccessibilityService.isServiceConnected) {
             Toast.makeText(this, "Please enable Accessibility Service first", Toast.LENGTH_LONG).show()
             isAutoMode = false
             updateWidgetUI()
             return
         }
-
         Toast.makeText(this, "Auto Mode Activated", Toast.LENGTH_SHORT).show()
         val intent = Intent(this, MLProcessingService::class.java).apply { putExtra("mode", "automation") }
         startService(intent)
