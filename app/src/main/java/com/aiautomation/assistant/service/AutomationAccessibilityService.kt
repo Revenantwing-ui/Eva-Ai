@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.util.Log
 import kotlinx.coroutines.*
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
@@ -15,8 +16,6 @@ class AutomationAccessibilityService : AccessibilityService() {
     companion object {
         var instance: AutomationAccessibilityService? = null
             private set
-        
-        // Reliable flag to check if service is active
         var isServiceConnected = false
             private set
     }
@@ -27,6 +26,7 @@ class AutomationAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         isServiceConnected = true
+        Log.d("AUTO_SERVICE", "Service Connected Successfully")
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
@@ -35,27 +35,16 @@ class AutomationAccessibilityService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Optional: Listen to events if needed
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onInterrupt() { isServiceConnected = false }
 
-    override fun onInterrupt() {
-        isServiceConnected = false
-    }
-
-    /**
-     * NEW: Captures the screen's text and button structure
-     */
     fun captureScreenContext(): List<UIContextNode> {
         val root = rootInActiveWindow ?: return emptyList()
         val nodes = mutableListOf<UIContextNode>()
-        
         fun traverse(node: AccessibilityNodeInfo) {
             val rect = Rect()
             node.getBoundsInScreen(rect)
-            
-            // Collect nodes that are clickable or have text
-            if (node.text != null || node.isClickable || node.isEditable) {
+            if (node.text != null || node.isClickable) {
                 nodes.add(UIContextNode(
                     text = node.text?.toString() ?: "",
                     className = node.className?.toString() ?: "",
@@ -64,76 +53,46 @@ class AutomationAccessibilityService : AccessibilityService() {
                     bounds = rect
                 ))
             }
-            
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let { traverse(it) }
             }
         }
-        
         try { traverse(root) } catch (e: Exception) { e.printStackTrace() }
         return nodes
     }
 
-    // --- Gesture Functions ---
-
+    /**
+     * Performs a tap gesture.
+     * Returns TRUE if the system accepted the gesture, FALSE otherwise.
+     */
     suspend fun performClick(x: Float, y: Float): Boolean = suspendCoroutine { continuation ->
-        val path = Path().apply { moveTo(x, y) }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
-            .build()
-        dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) { continuation.resume(true) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { continuation.resume(false) }
-        }, null)
-    }
-
-    suspend fun performSwipe(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long = 300): Boolean = suspendCoroutine { continuation ->
-        val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(endX, endY)
+        // Check for invalid coordinates (common error)
+        if (x < 0 || y < 0) {
+            continuation.resume(false)
+            return@suspendCoroutine
         }
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-            .build()
-        dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) { continuation.resume(true) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { continuation.resume(false) }
-        }, null)
-    }
 
-    suspend fun performLongPress(x: Float, y: Float, duration: Long = 1000): Boolean = suspendCoroutine { continuation ->
         val path = Path().apply { moveTo(x, y) }
+        
+        // Click duration 50ms is standard for taps
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 50))
             .build()
-        dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) { continuation.resume(true) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { continuation.resume(false) }
-        }, null)
-    }
 
-    suspend fun performScroll(direction: ScrollDirection, amount: Float = 500f): Boolean {
-        val displayMetrics = resources.displayMetrics
-        val centerX = displayMetrics.widthPixels / 2f
-        val centerY = displayMetrics.heightPixels / 2f
-        return when (direction) {
-            ScrollDirection.UP -> performSwipe(centerX, centerY, centerX, centerY - amount)
-            ScrollDirection.DOWN -> performSwipe(centerX, centerY, centerX, centerY + amount)
-            ScrollDirection.LEFT -> performSwipe(centerX, centerY, centerX - amount, centerY)
-            ScrollDirection.RIGHT -> performSwipe(centerX, centerY, centerX + amount, centerY)
-        }
-    }
-
-    fun typeText(text: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
-        val focusedNode = rootNode.findFocus(AccessibilityEvent.TYPE_VIEW_FOCUSED)
-        return if (focusedNode != null && focusedNode.isEditable) {
-            val arguments = android.os.Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                Log.d("AUTO_SERVICE", "Click Completed at $x, $y")
+                continuation.resume(true)
             }
-            focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-        } else {
-            false
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                Log.d("AUTO_SERVICE", "Click Cancelled at $x, $y")
+                continuation.resume(false)
+            }
+        }, null)
+
+        if (!dispatched) {
+            Log.e("AUTO_SERVICE", "System rejected gesture dispatch")
+            continuation.resume(false)
         }
     }
 
@@ -142,11 +101,8 @@ class AutomationAccessibilityService : AccessibilityService() {
         instance = null
         serviceScope.cancel()
     }
-
-    enum class ScrollDirection { UP, DOWN, LEFT, RIGHT }
 }
 
-// Data class required for AI context
 data class UIContextNode(
     val text: String,
     val className: String,
