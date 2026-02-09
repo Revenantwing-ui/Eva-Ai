@@ -15,10 +15,12 @@ import kotlin.coroutines.suspendCoroutine
 class AutomationAccessibilityService : AccessibilityService() {
 
     companion object {
-        private var instance: AutomationAccessibilityService? = null
+        var instance: AutomationAccessibilityService? = null
+            private set
         
-        fun getInstance(): AutomationAccessibilityService? = instance
-        fun isServiceEnabled(): Boolean = instance != null
+        // FIX: This property was missing, causing the "Unresolved reference" error
+        var isServiceConnected = false
+            private set
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -27,19 +29,19 @@ class AutomationAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        isServiceConnected = true
+        Log.d("AUTO_SERVICE", "Service Connected")
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        isServiceConnected = false
         instance = null
         return super.onUnbind(intent)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-    override fun onInterrupt() {}
+    override fun onInterrupt() { isServiceConnected = false }
 
-    /**
-     * Reads screen text for menu navigation
-     */
     fun captureScreenContext(): List<UIContextNode> {
         val root = rootInActiveWindow ?: return emptyList()
         val nodes = mutableListOf<UIContextNode>()
@@ -63,26 +65,21 @@ class AutomationAccessibilityService : AccessibilityService() {
         return nodes
     }
 
-    /**
-     * SIMULATE HARDWARE PRESS (Jitter + Duration)
-     */
     suspend fun simulateNaturalTap(x: Float, y: Float): Boolean = suspendCoroutine { continuation ->
         if (x < 0 || y < 0) {
             continuation.resume(false)
             return@suspendCoroutine
         }
 
-        // 1. Jitter (Random offset +/- 5px)
+        // Add human jitter
         val jitterX = x + (random.nextInt(10) - 5)
         val jitterY = y + (random.nextInt(10) - 5)
 
-        // 2. Micro-Movement Path (Simulates finger roll)
         val path = Path().apply {
             moveTo(jitterX, jitterY)
             lineTo(jitterX + 2, jitterY + 2)
         }
         
-        // 3. Realistic Duration (80-130ms)
         val duration = (80 + random.nextInt(50)).toLong()
 
         val gesture = GestureDescription.Builder()
@@ -100,8 +97,8 @@ class AutomationAccessibilityService : AccessibilityService() {
 
         if (!dispatched) continuation.resume(false)
     }
-    
-    // Legacy support
+
+    // Standard click for compatibility
     suspend fun performClick(x: Float, y: Float) = simulateNaturalTap(x, y)
 
     override fun onDestroy() {
