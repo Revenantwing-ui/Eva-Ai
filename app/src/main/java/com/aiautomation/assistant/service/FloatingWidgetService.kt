@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -55,9 +56,18 @@ class FloatingWidgetService : Service() {
 
         setupFloatingWidget()
         setupClickListeners()
-        startForeground(1, createNotification())
+        
+        // Android 15 Compliant Start Foreground
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(1, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(1, createNotification())
+        }
     }
 
+    // ... [Copy the rest of the file exactly from the previous working version] ...
+    // Note: Ensure startAutoMode uses AutomationAccessibilityService.isServiceConnected
+    
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP_SERVICE) {
             stopSelfAndCleanup()
@@ -90,7 +100,7 @@ class FloatingWidgetService : Service() {
         windowManager.addView(floatingView, layoutParams)
         setupDraggable(layoutParams)
         updateWidgetUI()
-    } // <--- This closing brace was missing in previous versions
+    }
 
     private fun setupDraggable(params: WindowManager.LayoutParams) {
         binding.widgetHeader.setOnTouchListener { view, event ->
@@ -170,7 +180,6 @@ class FloatingWidgetService : Service() {
     }
 
     private fun startAutoMode() {
-        // FIX: Using standardized property check
         if (!AutomationAccessibilityService.isServiceConnected) {
             Toast.makeText(this, "Please enable Accessibility Service first", Toast.LENGTH_LONG).show()
             isAutoMode = false
