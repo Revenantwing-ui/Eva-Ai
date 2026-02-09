@@ -17,7 +17,8 @@ class MLProcessingService : Service() {
     private lateinit var patternRecognition: PatternRecognitionManager
     private var processingMode: ProcessingMode = ProcessingMode.IDLE
     private var automationJob: Job? = null
-    
+
+    // UI Helper for debugging
     private fun showToast(message: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
@@ -42,7 +43,7 @@ class MLProcessingService : Service() {
     private fun startAutomationMode() {
         if (processingMode == ProcessingMode.AUTOMATION) return
         processingMode = ProcessingMode.AUTOMATION
-        showToast("Auto Mode: Simulating Hardware Input...")
+        showToast("AI Started: Searching for matches...")
         
         automationJob = serviceScope.launch {
             executeAutomation()
@@ -52,44 +53,45 @@ class MLProcessingService : Service() {
     private fun stopProcessing() {
         processingMode = ProcessingMode.IDLE
         automationJob?.cancel()
-        showToast("Auto Mode Paused")
+        showToast("AI Stopped")
     }
 
     private suspend fun executeAutomation() {
-        val accessibilityService = AutomationAccessibilityService.instance
+        val accessibilityService = AutomationAccessibilityService.getInstance()
         
-        if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
-            showToast("ERROR: Accessibility Service Disconnected")
-            delay(2000)
+        // Safety Check
+        if (accessibilityService == null || !AutomationAccessibilityService.isServiceEnabled()) {
+            showToast("Error: Accessibility Service Not Connected")
             return
         }
 
         while (processingMode == ProcessingMode.AUTOMATION) {
             try {
+                // 1. Capture Screen
                 val screenshot = ScreenCaptureService.latestScreenshot
                 if (screenshot == null) {
-                    showToast("Waiting for screen...") 
+                    showToast("Waiting for screen...")
                     delay(1000)
                     continue
                 }
 
+                // 2. Capture Context (Text)
                 val uiContext = accessibilityService.captureScreenContext()
                 
-                // ANALYZE
+                // 3. Analyze
+                // FIX: Use the new analyzeScreen method instead of the old placeholder
                 val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
                 
-                // ACT
+                // 4. Act
                 if (nextAction != null) {
-                    showToast("Tap: ${nextAction.text ?: "Target"}") 
+                    showToast(nextAction.text ?: "Clicking...")
+                    executeAction(nextAction, accessibilityService)
                     
-                    val success = executeAction(nextAction, accessibilityService)
-                    if (!success) showToast("Tap Failed - Check Permissions")
-                    
-                    // Wait for human-like reaction time + animation
-                    delay(1500) 
+                    // Wait for animation (Games are slower than code)
+                    delay(1200) 
                 }
                 
-                delay(500) 
+                delay(500) // Scan frequency
                 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -101,12 +103,11 @@ class MLProcessingService : Service() {
     private suspend fun executeAction(
         action: ActionSequence,
         accessibilityService: AutomationAccessibilityService
-    ): Boolean {
+    ) {
         if (action.actionType == "CLICK" && action.x != null && action.y != null) {
-            // USE THE NEW NATURAL TAP FUNCTION
-            return accessibilityService.simulateNaturalTap(action.x, action.y)
+            // FIX: Use simulateNaturalTap for hardware simulation
+            accessibilityService.simulateNaturalTap(action.x, action.y)
         }
-        return false
     }
 
     override fun onDestroy() {
