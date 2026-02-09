@@ -18,7 +18,6 @@ class MLProcessingService : Service() {
     private var processingMode: ProcessingMode = ProcessingMode.IDLE
     private var automationJob: Job? = null
 
-    // UI Helper for debugging
     private fun showToast(message: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
@@ -43,7 +42,7 @@ class MLProcessingService : Service() {
     private fun startAutomationMode() {
         if (processingMode == ProcessingMode.AUTOMATION) return
         processingMode = ProcessingMode.AUTOMATION
-        showToast("AI Started: Searching for matches...")
+        showToast("Auto Mode Started")
         
         automationJob = serviceScope.launch {
             executeAutomation()
@@ -53,45 +52,40 @@ class MLProcessingService : Service() {
     private fun stopProcessing() {
         processingMode = ProcessingMode.IDLE
         automationJob?.cancel()
-        showToast("AI Stopped")
+        showToast("Auto Mode Stopped")
     }
 
     private suspend fun executeAutomation() {
-        val accessibilityService = AutomationAccessibilityService.getInstance()
+        // FIX: Using the property 'instance' instead of function 'getInstance()'
+        val accessibilityService = AutomationAccessibilityService.instance
         
-        // Safety Check
-        if (accessibilityService == null || !AutomationAccessibilityService.isServiceEnabled()) {
+        // FIX: Using 'isServiceConnected' instead of 'isServiceEnabled()'
+        if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
             showToast("Error: Accessibility Service Not Connected")
+            stopProcessing()
             return
         }
 
         while (processingMode == ProcessingMode.AUTOMATION) {
             try {
-                // 1. Capture Screen
                 val screenshot = ScreenCaptureService.latestScreenshot
                 if (screenshot == null) {
-                    showToast("Waiting for screen...")
                     delay(1000)
                     continue
                 }
 
-                // 2. Capture Context (Text)
                 val uiContext = accessibilityService.captureScreenContext()
                 
-                // 3. Analyze
-                // FIX: Use the new analyzeScreen method instead of the old placeholder
+                // Pass data to brain
                 val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
                 
-                // 4. Act
                 if (nextAction != null) {
                     showToast(nextAction.text ?: "Clicking...")
                     executeAction(nextAction, accessibilityService)
-                    
-                    // Wait for animation (Games are slower than code)
-                    delay(1200) 
+                    delay(1500) // Wait for game animation
                 }
                 
-                delay(500) // Scan frequency
+                delay(500) 
                 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -105,7 +99,6 @@ class MLProcessingService : Service() {
         accessibilityService: AutomationAccessibilityService
     ) {
         if (action.actionType == "CLICK" && action.x != null && action.y != null) {
-            // FIX: Use simulateNaturalTap for hardware simulation
             accessibilityService.simulateNaturalTap(action.x, action.y)
         }
     }
