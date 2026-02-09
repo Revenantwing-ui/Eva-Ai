@@ -17,7 +17,6 @@ class MLProcessingService : Service() {
     private var automationJob: Job? = null
 
     private val recordedActions = mutableListOf<ActionSequence>()
-    private var currentSequenceStart = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -41,17 +40,11 @@ class MLProcessingService : Service() {
 
     private fun startLearningMode() {
         processingMode = ProcessingMode.LEARNING
-        currentSequenceStart = System.currentTimeMillis()
         recordedActions.clear()
-        
-        // Start observing user actions
-        observeUserActions()
     }
 
     private fun startAutomationMode() {
         processingMode = ProcessingMode.AUTOMATION
-        
-        // Start automation execution
         automationJob = serviceScope.launch {
             executeAutomation()
         }
@@ -60,28 +53,14 @@ class MLProcessingService : Service() {
     private fun stopProcessing() {
         processingMode = ProcessingMode.IDLE
         automationJob?.cancel()
-        
         if (recordedActions.isNotEmpty()) {
-            // Save learned sequence
             saveLearnedSequence()
         }
     }
 
-    private fun observeUserActions() {
-        // This will be called from ScreenCaptureService when new frames arrive
-        // Pattern recognition will identify UI elements and track user interactions
-    }
-
-    /**
-     * Updated Automation Loop:
-     * 1. Captures Screen Image (Visuals)
-     * 2. Captures Accessibility Nodes (Context/Text)
-     * 3. Sends both to PatternRecognitionManager
-     */
     private suspend fun executeAutomation() {
         val accessibilityService = AutomationAccessibilityService.instance
         
-        // Ensure accessibility service is connected and ready
         if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
             processingMode = ProcessingMode.IDLE
             return
@@ -89,19 +68,100 @@ class MLProcessingService : Service() {
 
         while (processingMode == ProcessingMode.AUTOMATION) {
             try {
-                // 1. Get Screen Image (Visuals)
+                // 1. Get Screen Image
                 val screenshot = ScreenCaptureService.latestScreenshot
                 
-                // 2. Get Screen Context (Text & Structure)
+                // 2. Get Screen Context
                 val uiContext = accessibilityService.captureScreenContext()
                 
                 if (screenshot != null) {
-                    // 3. Analyze using both Image and Context
-                    // This uses the new analyzeScreen method we added to PatternRecognitionManager
+                    // 3. Analyze
                     val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
                     
-                    // 4. Execute Action if found
+                    // 4. Execute
                     nextAction?.let { action ->
                         executeAction(action, accessibilityService)
-                        
-                        //
+                        delay(1000) 
+                    }
+                }
+                delay(500)
+                
+            } catch (e: Exception) {
+                e.printStackTrace()
+                delay(1000)
+            }
+        }
+    }
+
+    private suspend fun executeAction(
+        action: ActionSequence,
+        accessibilityService: AutomationAccessibilityService
+    ) {
+        when (action.actionType) {
+            "CLICK" -> {
+                action.x?.let { x ->
+                    action.y?.let { y ->
+                        accessibilityService.performClick(x, y)
+                    }
+                }
+            }
+            "SWIPE" -> {
+                if (action.x != null && action.y != null && action.endX != null && action.endY != null) {
+                    accessibilityService.performSwipe(action.x, action.y, action.endX, action.endY)
+                }
+            }
+            "LONG_PRESS" -> {
+                action.x?.let { x ->
+                    action.y?.let { y ->
+                        accessibilityService.performLongPress(x, y)
+                    }
+                }
+            }
+            "SCROLL" -> {
+                val direction = when (action.direction) {
+                    "UP" -> AutomationAccessibilityService.ScrollDirection.UP
+                    "LEFT" -> AutomationAccessibilityService.ScrollDirection.LEFT
+                    "RIGHT" -> AutomationAccessibilityService.ScrollDirection.RIGHT
+                    else -> AutomationAccessibilityService.ScrollDirection.DOWN
+                }
+                accessibilityService.performScroll(direction)
+            }
+            "TYPE_TEXT" -> {
+                action.text?.let { text ->
+                    accessibilityService.typeText(text)
+                }
+            }
+            "WAIT" -> {
+                action.duration?.let { duration ->
+                    delay(duration)
+                }
+            }
+        }
+    }
+
+    private fun saveLearnedSequence() {
+        serviceScope.launch {
+            try {
+                val app = application as AutomationApp
+                val dao = app.database.actionSequenceDao()
+                recordedActions.forEach { action ->
+                    dao.insertActionSequence(action)
+                }
+                patternRecognition.updateModel(recordedActions)
+                recordedActions.clear()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopProcessing()
+        serviceScope.cancel()
+    }
+
+    enum class ProcessingMode {
+        IDLE, LEARNING, AUTOMATION
+    }
+}
