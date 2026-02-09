@@ -18,7 +18,6 @@ class MLProcessingService : Service() {
     private var processingMode: ProcessingMode = ProcessingMode.IDLE
     private var automationJob: Job? = null
     
-    // Helper to show toasts from background thread
     private fun showToast(message: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
@@ -43,8 +42,7 @@ class MLProcessingService : Service() {
     private fun startAutomationMode() {
         if (processingMode == ProcessingMode.AUTOMATION) return
         processingMode = ProcessingMode.AUTOMATION
-        
-        showToast("Auto Mode Started: Scanning...")
+        showToast("Auto Mode: Simulating Hardware Input...")
         
         automationJob = serviceScope.launch {
             executeAutomation()
@@ -60,43 +58,38 @@ class MLProcessingService : Service() {
     private suspend fun executeAutomation() {
         val accessibilityService = AutomationAccessibilityService.instance
         
-        // CHECK 1: Is Accessibility Service Connected?
         if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
-            showToast("Error: Accessibility Service NOT active!")
-            processingMode = ProcessingMode.IDLE
+            showToast("ERROR: Accessibility Service Disconnected")
+            delay(2000)
             return
         }
 
         while (processingMode == ProcessingMode.AUTOMATION) {
             try {
-                // CHECK 2: Do we have a screenshot?
                 val screenshot = ScreenCaptureService.latestScreenshot
                 if (screenshot == null) {
-                    showToast("Waiting for screen...") // Debug: Tell user screen is missing
+                    showToast("Waiting for screen...") 
                     delay(1000)
                     continue
                 }
 
-                // CHECK 3: Do we have context?
                 val uiContext = accessibilityService.captureScreenContext()
                 
                 // ANALYZE
                 val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
                 
+                // ACT
                 if (nextAction != null) {
-                    // ACTION FOUND!
-                    showToast(nextAction.text ?: "Clicking...") // Debug: Tell user what we found
-                    executeAction(nextAction, accessibilityService)
+                    showToast("Tap: ${nextAction.text ?: "Target"}") 
                     
-                    // Wait for animation (Dominos take ~1s to clear)
+                    val success = executeAction(nextAction, accessibilityService)
+                    if (!success) showToast("Tap Failed - Check Permissions")
+                    
+                    // Wait for human-like reaction time + animation
                     delay(1500) 
-                } else {
-                    // No match found
-                    // Uncomment next line if you want to know when it sees nothing (can be spammy)
-                    // showToast("Scanning... No match") 
                 }
                 
-                delay(600) // Scan delay
+                delay(500) 
                 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -108,10 +101,12 @@ class MLProcessingService : Service() {
     private suspend fun executeAction(
         action: ActionSequence,
         accessibilityService: AutomationAccessibilityService
-    ) {
+    ): Boolean {
         if (action.actionType == "CLICK" && action.x != null && action.y != null) {
-            accessibilityService.performClick(action.x, action.y)
+            // USE THE NEW NATURAL TAP FUNCTION
+            return accessibilityService.simulateNaturalTap(action.x, action.y)
         }
+        return false
     }
 
     override fun onDestroy() {
