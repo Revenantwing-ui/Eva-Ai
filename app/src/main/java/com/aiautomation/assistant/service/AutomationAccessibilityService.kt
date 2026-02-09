@@ -15,7 +15,7 @@ import kotlin.coroutines.suspendCoroutine
 class AutomationAccessibilityService : AccessibilityService() {
 
     companion object {
-        // These are the STATIC properties other services are looking for
+        // STATIC properties accessed by FloatingWidgetService and MLProcessingService
         var instance: AutomationAccessibilityService? = null
             private set
         
@@ -102,7 +102,6 @@ class AutomationAccessibilityService : AccessibilityService() {
         if (!dispatched) continuation.resume(false)
     }
     
-    // Compatibility wrapper
     suspend fun performClick(x: Float, y: Float) = simulateNaturalTap(x, y)
 
     override fun onDestroy() {
@@ -112,7 +111,6 @@ class AutomationAccessibilityService : AccessibilityService() {
     }
 }
 
-// Data class used by other files
 data class UIContextNode(
     val text: String,
     val className: String,
