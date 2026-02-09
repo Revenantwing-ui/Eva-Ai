@@ -2,7 +2,10 @@ package com.aiautomation.assistant.service
 
 import android.app.Service
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.widget.Toast
 import com.aiautomation.assistant.AutomationApp
 import com.aiautomation.assistant.data.ActionSequence
 import com.aiautomation.assistant.ml.PatternRecognitionManager
@@ -12,10 +15,15 @@ class MLProcessingService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var patternRecognition: PatternRecognitionManager
-    
     private var processingMode: ProcessingMode = ProcessingMode.IDLE
     private var automationJob: Job? = null
-    private val recordedActions = mutableListOf<ActionSequence>()
+    
+    // Helper to show toasts from background thread
+    private fun showToast(message: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -27,21 +35,17 @@ class MLProcessingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val mode = intent?.getStringExtra("mode")
-        when (mode) {
-            "learning" -> startLearningMode()
-            "automation" -> startAutomationMode()
-            "idle" -> stopProcessing()
-        }
+        if (mode == "automation") startAutomationMode()
+        else if (mode == "idle") stopProcessing()
         return START_STICKY
     }
 
-    private fun startLearningMode() {
-        processingMode = ProcessingMode.LEARNING
-        recordedActions.clear()
-    }
-
     private fun startAutomationMode() {
+        if (processingMode == ProcessingMode.AUTOMATION) return
         processingMode = ProcessingMode.AUTOMATION
+        
+        showToast("Auto Mode Started: Scanning...")
+        
         automationJob = serviceScope.launch {
             executeAutomation()
         }
@@ -50,37 +54,49 @@ class MLProcessingService : Service() {
     private fun stopProcessing() {
         processingMode = ProcessingMode.IDLE
         automationJob?.cancel()
+        showToast("Auto Mode Paused")
     }
 
     private suspend fun executeAutomation() {
         val accessibilityService = AutomationAccessibilityService.instance
         
-        // Ensure service is connected before trying to run
+        // CHECK 1: Is Accessibility Service Connected?
         if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
+            showToast("Error: Accessibility Service NOT active!")
             processingMode = ProcessingMode.IDLE
             return
         }
 
         while (processingMode == ProcessingMode.AUTOMATION) {
             try {
-                // 1. Get Screen Image (Visuals)
+                // CHECK 2: Do we have a screenshot?
                 val screenshot = ScreenCaptureService.latestScreenshot
-                
-                // 2. Get Screen Context (Text & Buttons)
+                if (screenshot == null) {
+                    showToast("Waiting for screen...") // Debug: Tell user screen is missing
+                    delay(1000)
+                    continue
+                }
+
+                // CHECK 3: Do we have context?
                 val uiContext = accessibilityService.captureScreenContext()
                 
-                if (screenshot != null) {
-                    // 3. DECIDE: Pass both Visuals and Text to the Brain
-                    // THIS IS THE CRITICAL LINE THAT WAS MISSING
-                    val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
+                // ANALYZE
+                val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
+                
+                if (nextAction != null) {
+                    // ACTION FOUND!
+                    showToast(nextAction.text ?: "Clicking...") // Debug: Tell user what we found
+                    executeAction(nextAction, accessibilityService)
                     
-                    // 4. ACT: Perform the click/action
-                    nextAction?.let { action ->
-                        executeAction(action, accessibilityService)
-                        delay(1200) // Wait for game animation
-                    }
+                    // Wait for animation (Dominos take ~1s to clear)
+                    delay(1500) 
+                } else {
+                    // No match found
+                    // Uncomment next line if you want to know when it sees nothing (can be spammy)
+                    // showToast("Scanning... No match") 
                 }
-                delay(500) // Scan rate
+                
+                delay(600) // Scan delay
                 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -93,18 +109,8 @@ class MLProcessingService : Service() {
         action: ActionSequence,
         accessibilityService: AutomationAccessibilityService
     ) {
-        when (action.actionType) {
-            "CLICK" -> {
-                if (action.x != null && action.y != null) {
-                    accessibilityService.performClick(action.x, action.y)
-                }
-            }
-            "SWIPE" -> {
-                if (action.x != null && action.y != null && action.endX != null && action.endY != null) {
-                    accessibilityService.performSwipe(action.x, action.y, action.endX, action.endY)
-                }
-            }
-            // Add other actions as needed
+        if (action.actionType == "CLICK" && action.x != null && action.y != null) {
+            accessibilityService.performClick(action.x, action.y)
         }
     }
 
