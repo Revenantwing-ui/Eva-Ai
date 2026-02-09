@@ -13,25 +13,24 @@ import kotlin.math.abs
 
 class PatternRecognitionManager(private val context: Context) {
 
-    // No TFLite needed for this approach - we use direct bitmap analysis
-    
     /**
-     * MAIN BRAIN: Analyzes the screen for matches
+     * MAIN BRAIN: Analyzes the screen for Domino Matches
      */
     suspend fun analyzeScreen(bitmap: Bitmap, uiNodes: List<UIContextNode>): ActionSequence? {
         return withContext(Dispatchers.Default) {
             
-            // 1. Check for Text Buttons (Play, Continue, etc.)
+            // 1. First, check for System/Menu popups (Play, Continue, etc.)
+            // We prioritize this so the AI doesn't get stuck on "Level Complete" screens.
             val smartAction = findSmartAction(uiNodes)
             if (smartAction != null) {
-                Log.d("AI_BRAIN", "Found Menu Action: ${smartAction.text}")
+                Log.d("AI_BRAIN", "Menu Action Found: ${smartAction.text}")
                 return@withContext smartAction
             }
 
-            // 2. Check for Game Tiles (Grid Match)
-            val matchAction = findVisualMatches(bitmap)
+            // 2. DOMINO LOGIC: Hand-to-Board Matching
+            val matchAction = findDominoMatch(bitmap)
             if (matchAction != null) {
-                Log.d("AI_BRAIN", "Found Tile Match at ${matchAction.x}, ${matchAction.y}")
+                Log.d("AI_BRAIN", "Domino Match Found at ${matchAction.x}, ${matchAction.y}")
                 return@withContext matchAction
             }
             
@@ -39,13 +38,15 @@ class PatternRecognitionManager(private val context: Context) {
         }
     }
 
+    /**
+     * Looks for clickable Menu Buttons
+     */
     private fun findSmartAction(nodes: List<UIContextNode>): ActionSequence? {
         val targetKeywords = listOf(
             "Play", "Level", "Claim", "Collect", "No Thanks", "Tap to Start", "Retry", "Free",
             "Install", "Update", "Confirm", "Allow", "Continue", "Next", "Skip", "Close", "X"
         )
         
-        // Find clickable nodes with matching text
         val targetNode = nodes.find { node -> 
             (node.isClickable || node.text.length < 20) && 
             targetKeywords.any { keyword -> 
@@ -61,7 +62,7 @@ class PatternRecognitionManager(private val context: Context) {
                 sequenceId = "menu_auto",
                 orderInSequence = 0,
                 timestamp = System.currentTimeMillis(),
-                text = "Clicked: ${targetNode.text}", // For debug
+                text = "Menu: ${targetNode.text}",
                 confidence = 1.0f
             )
         }
@@ -69,67 +70,60 @@ class PatternRecognitionManager(private val context: Context) {
     }
 
     /**
-     * ADVANCED COLOR MATCHER:
-     * Instead of complex features, we check the "Color Signature" of the center of each tile.
-     * This is much more robust for games like Domino Dreams.
+     * DOMINO MATCHING ALGORITHM
+     * 1. Identify the color of the "Hand" tile (Bottom Center).
+     * 2. Scan the "Board" (Top) for that same color.
      */
-    private fun findVisualMatches(bitmap: Bitmap): ActionSequence? {
+    private fun findDominoMatch(bitmap: Bitmap): ActionSequence? {
         val width = bitmap.width
         val height = bitmap.height
         
-        // Expand search area slightly (15% to 85% of screen height)
-        val gameAreaTop = (height * 0.15).toInt()
-        val gameAreaBottom = (height * 0.85).toInt()
+        // --- ZONE DEFINITIONS ---
+        // Hand Area: The single tile you play from (Bottom Center)
+        val handX = width / 2
+        val handY = (height * 0.88).toInt() // Approx 88% down the screen
         
-        // Standard Grid for Match Games (Adjustable)
-        val rows = 6
-        val cols = 4
-        val cellW = width / cols
-        val cellH = (gameAreaBottom - gameAreaTop) / rows
-        
-        val cells = mutableListOf<GridCell>()
+        // Board Area: The puzzle tiles (Top 75% of screen)
+        val boardBottom = (height * 0.75).toInt()
+        val boardTop = (height * 0.15).toInt()
 
         try {
-            // 1. EXTRACT SIGNATURES
-            for (r in 0 until rows) {
-                for (c in 0 until cols) {
-                    val cx = c * cellW
-                    val cy = gameAreaTop + (r * cellH)
-                    
-                    // Safety check bounds
-                    if (cx + cellW <= width && cy + cellH <= height) {
-                        // Get center point of this grid cell
-                        val centerX = cx + (cellW / 2)
-                        val centerY = cy + (cellH / 2)
-                        
-                        // Extract avg color of a 20x20 box in the center of the tile
-                        // This avoids border issues and background noise
-                        val signature = getAverageColor(bitmap, centerX, centerY, 20)
-                        
-                        // Filter out dark/transparent "empty" spaces (assuming black/dark grey background)
-                        if (signature.brightness > 0.2f) {
-                            cells.add(GridCell(r, c, centerX.toFloat(), centerY.toFloat(), signature))
-                        }
-                    }
-                }
+            // 1. GET HAND COLOR
+            // We sample a small box in the player's hand to find the "Active Color"
+            val handColor = getAverageColor(bitmap, handX, handY, 30)
+            
+            // If hand is too dark/black, maybe no tile is there? Skip.
+            if (handColor.brightness < 0.2f) {
+                Log.d("AI_BRAIN", "Hand is empty/dark. Waiting...")
+                return null
             }
 
-            // 2. FIND MATCHING PAIRS
-            for (i in 0 until cells.size) {
-                for (j in i + 1 until cells.size) {
-                    val cellA = cells[i]
-                    val cellB = cells[j]
+            // 2. SCAN BOARD FOR MATCH
+            // We scan the board in a grid looking for the Hand Color
+            val rows = 12 // Higher density scan for better accuracy
+            val cols = 8
+            val cellW = width / cols
+            val cellH = (boardBottom - boardTop) / rows
+
+            for (r in 0 until rows) {
+                for (c in 0 until cols) {
+                    val cx = c * cellW + (cellW / 2)
+                    val cy = boardTop + r * cellH + (cellH / 2)
                     
-                    // Compare Color Signatures
-                    if (areColorsSimilar(cellA.signature, cellB.signature)) {
+                    // Get color of this board section
+                    val boardColor = getAverageColor(bitmap, cx, cy, 20)
+                    
+                    // CHECK MATCH
+                    if (areColorsSimilar(handColor, boardColor)) {
+                        // Found a tile on board with same color as hand!
                         return ActionSequence(
                             actionType = "CLICK",
-                            x = cellA.centerX,
-                            y = cellA.centerY, // Click the first one found
-                            sequenceId = "tile_match",
+                            x = cx.toFloat(),
+                            y = cy.toFloat(),
+                            sequenceId = "domino_match",
                             orderInSequence = 0,
                             timestamp = System.currentTimeMillis(),
-                            text = "Match Found!",
+                            text = "Found Match!",
                             confidence = 0.95f
                         )
                     }
@@ -146,10 +140,11 @@ class PatternRecognitionManager(private val context: Context) {
         var rSum = 0L; var gSum = 0L; var bSum = 0L
         var count = 0
         
-        val startX = (x - size/2).coerceAtLeast(0)
-        val startY = (y - size/2).coerceAtLeast(0)
-        val endX = (x + size/2).coerceAtMost(bitmap.width - 1)
-        val endY = (y + size/2).coerceAtMost(bitmap.height - 1)
+        // Bounds checking
+        val startX = (x - size/2).coerceIn(0, bitmap.width - 1)
+        val endX = (x + size/2).coerceIn(0, bitmap.width - 1)
+        val startY = (y - size/2).coerceIn(0, bitmap.height - 1)
+        val endY = (y + size/2).coerceIn(0, bitmap.height - 1)
 
         for (px in startX..endX) {
             for (py in startY..endY) {
@@ -166,25 +161,21 @@ class PatternRecognitionManager(private val context: Context) {
         val r = (rSum / count).toInt()
         val g = (gSum / count).toInt()
         val b = (bSum / count).toInt()
-        
-        // Calculate brightness (Luminance)
         val brightness = (0.299*r + 0.587*g + 0.114*b) / 255.0
         
         return ColorSignature(r, g, b, brightness.toFloat())
     }
 
     private fun areColorsSimilar(c1: ColorSignature, c2: ColorSignature): Boolean {
-        // Simple Euclidean distance in RGB space
-        // Threshold: 15 (Very strict match) to 30 (Loose match)
+        // Threshold: 30 allows for slight lighting variations (glare, shadows)
         val diff = abs(c1.r - c2.r) + abs(c1.g - c2.g) + abs(c1.b - c2.b)
-        return diff < 25 // Adjust this if matches are missed (increase) or wrong (decrease)
+        return diff < 30 
     }
 
-    // --- Helper Classes & Legacy Stubs ---
-    
+    // Data Classes
     data class ColorSignature(val r: Int, val g: Int, val b: Int, val brightness: Float)
-    private data class GridCell(val row: Int, val col: Int, val centerX: Float, val centerY: Float, val signature: ColorSignature)
-
+    
+    // Legacy stubs to satisfy interface
     suspend fun recognizePatterns(bitmap: Bitmap): List<RecognizedPattern> = emptyList()
     suspend fun updateModel(actions: List<ActionSequence>) {}
     suspend fun processFrame(bitmap: Bitmap) {}
