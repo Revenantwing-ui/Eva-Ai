@@ -15,10 +15,10 @@ import kotlin.coroutines.suspendCoroutine
 class AutomationAccessibilityService : AccessibilityService() {
 
     companion object {
+        // These are the STATIC properties other services are looking for
         var instance: AutomationAccessibilityService? = null
             private set
         
-        // FIX: This property was missing, causing the "Unresolved reference" error
         var isServiceConnected = false
             private set
     }
@@ -30,7 +30,7 @@ class AutomationAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         isServiceConnected = true
-        Log.d("AUTO_SERVICE", "Service Connected")
+        Log.d("AUTO_SERVICE", "Service Connected Successfully")
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
@@ -40,11 +40,15 @@ class AutomationAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-    override fun onInterrupt() { isServiceConnected = false }
+    
+    override fun onInterrupt() {
+        isServiceConnected = false
+    }
 
     fun captureScreenContext(): List<UIContextNode> {
         val root = rootInActiveWindow ?: return emptyList()
         val nodes = mutableListOf<UIContextNode>()
+        
         fun traverse(node: AccessibilityNodeInfo) {
             val rect = Rect()
             node.getBoundsInScreen(rect)
@@ -61,6 +65,7 @@ class AutomationAccessibilityService : AccessibilityService() {
                 node.getChild(i)?.let { traverse(it) }
             }
         }
+        
         try { traverse(root) } catch (e: Exception) { e.printStackTrace() }
         return nodes
     }
@@ -71,7 +76,6 @@ class AutomationAccessibilityService : AccessibilityService() {
             return@suspendCoroutine
         }
 
-        // Add human jitter
         val jitterX = x + (random.nextInt(10) - 5)
         val jitterY = y + (random.nextInt(10) - 5)
 
@@ -97,8 +101,8 @@ class AutomationAccessibilityService : AccessibilityService() {
 
         if (!dispatched) continuation.resume(false)
     }
-
-    // Standard click for compatibility
+    
+    // Compatibility wrapper
     suspend fun performClick(x: Float, y: Float) = simulateNaturalTap(x, y)
 
     override fun onDestroy() {
@@ -108,6 +112,7 @@ class AutomationAccessibilityService : AccessibilityService() {
     }
 }
 
+// Data class used by other files
 data class UIContextNode(
     val text: String,
     val className: String,
