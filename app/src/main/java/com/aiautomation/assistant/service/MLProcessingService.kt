@@ -43,10 +43,9 @@ class MLProcessingService : Service() {
         if (processingMode == ProcessingMode.AUTOMATION) return
         processingMode = ProcessingMode.AUTOMATION
         
-        showToast("Initializing Midas...")
+        showToast("Midas Initializing...")
         
         automationJob = serviceScope.launch {
-            // Load model (might take time if copying file)
             patternRecognition.loadMidasModel()
             showToast("Midas Active. Thinking...")
             
@@ -61,10 +60,12 @@ class MLProcessingService : Service() {
     }
 
     private suspend fun executeAutomation() {
+        // FIX: Use 'instance' property
         val accessibilityService = AutomationAccessibilityService.instance
         
+        // FIX: Use 'isServiceConnected' property
         if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
-            showToast("Error: Accessibility Service Not Connected")
+            showToast("Error: Service Disconnected")
             stopProcessing()
             return
         }
@@ -80,7 +81,6 @@ class MLProcessingService : Service() {
                 }
 
                 // 2. Analyze
-                // Use a dummy bitmap for now as we are text-focused
                 val dummyBitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
                 val nextAction = patternRecognition.analyzeScreen(dummyBitmap, uiContext)
                 
@@ -90,12 +90,10 @@ class MLProcessingService : Service() {
                     
                     if (nextAction.actionType == "CLICK" && nextAction.x != null && nextAction.y != null) {
                         accessibilityService.simulateNaturalTap(nextAction.x, nextAction.y)
-                        // Give app time to respond
-                        delay(2500) 
+                        delay(2500) // Wait for UI update
                     }
                 }
                 
-                // Thinking interval
                 delay(1000) 
                 
             } catch (e: Exception) {
