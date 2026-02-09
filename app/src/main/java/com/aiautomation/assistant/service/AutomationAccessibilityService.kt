@@ -80,48 +80,91 @@ class AutomationAccessibilityService : AccessibilityService() {
         return nodes
     }
 
-    // ... [Keep existing gesture methods like performClick, performSwipe, etc.] ...
-    
+    /**
+     * Perform a click at specific coordinates
+     */
     suspend fun performClick(x: Float, y: Float): Boolean = suspendCoroutine { continuation ->
-        val path = Path().apply { moveTo(x, y) }
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
             .build()
+
         dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) { continuation.resume(true) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { continuation.resume(false) }
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                continuation.resume(true)
+            }
+
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                continuation.resume(false)
+            }
         }, null)
     }
 
-    suspend fun performSwipe(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long = 300): Boolean = suspendCoroutine { continuation ->
+    /**
+     * Perform a swipe gesture
+     */
+    suspend fun performSwipe(
+        startX: Float, 
+        startY: Float, 
+        endX: Float, 
+        endY: Float, 
+        duration: Long = 300
+    ): Boolean = suspendCoroutine { continuation ->
         val path = Path().apply {
             moveTo(startX, startY)
             lineTo(endX, endY)
         }
+
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
+
         dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) { continuation.resume(true) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { continuation.resume(false) }
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                continuation.resume(true)
+            }
+
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                continuation.resume(false)
+            }
         }, null)
     }
 
-    suspend fun performLongPress(x: Float, y: Float, duration: Long = 1000): Boolean = suspendCoroutine { continuation ->
-        val path = Path().apply { moveTo(x, y) }
+    /**
+     * Perform a long press
+     */
+    suspend fun performLongPress(x: Float, y: Float, duration: Long = 1000): Boolean = 
+        suspendCoroutine { continuation ->
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
+
         dispatchGesture(gesture, object : GestureResultCallback() {
-            override fun onCompleted(gestureDescription: GestureDescription?) { continuation.resume(true) }
-            override fun onCancelled(gestureDescription: GestureDescription?) { continuation.resume(false) }
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                continuation.resume(true)
+            }
+
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                continuation.resume(false)
+            }
         }, null)
     }
-    
+
+    /**
+     * Perform a scroll gesture
+     */
     suspend fun performScroll(direction: ScrollDirection, amount: Float = 500f): Boolean {
         val displayMetrics = resources.displayMetrics
         val centerX = displayMetrics.widthPixels / 2f
         val centerY = displayMetrics.heightPixels / 2f
+
         return when (direction) {
             ScrollDirection.UP -> performSwipe(centerX, centerY, centerX, centerY - amount)
             ScrollDirection.DOWN -> performSwipe(centerX, centerY, centerX, centerY + amount)
@@ -130,23 +173,73 @@ class AutomationAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Type text (requires input field to be focused)
+     */
     fun typeText(text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
+        
+        // Find focused node
         val focusedNode = rootNode.findFocus(AccessibilityEvent.TYPE_VIEW_FOCUSED)
+        
         return if (focusedNode != null && focusedNode.isEditable) {
             val arguments = android.os.Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                putCharSequence(
+                    android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    text
+                )
             }
-            focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+            focusedNode.performAction(
+                android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,
+                arguments
+            )
         } else {
             false
         }
     }
 
-    enum class ScrollDirection { UP, DOWN, LEFT, RIGHT }
+    /**
+     * Press back button
+     */
+    fun pressBack(): Boolean {
+        return performGlobalAction(GLOBAL_ACTION_BACK)
+    }
+
+    /**
+     * Press home button
+     */
+    fun pressHome(): Boolean {
+        return performGlobalAction(GLOBAL_ACTION_HOME)
+    }
+
+    /**
+     * Press recent apps button
+     */
+    fun pressRecents(): Boolean {
+        return performGlobalAction(GLOBAL_ACTION_RECENTS)
+    }
+
+    /**
+     * Open notifications
+     */
+    fun openNotifications(): Boolean {
+        return performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        instance = null
+        serviceScope.cancel()
+    }
+
+    enum class ScrollDirection {
+        UP, DOWN, LEFT, RIGHT
+    }
 }
 
-// Data class to hold context info
+/**
+ * Data class to hold context info for the AI
+ */
 data class UIContextNode(
     val text: String,
     val className: String,
