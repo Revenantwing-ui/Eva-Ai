@@ -8,6 +8,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.util.Log
 import kotlinx.coroutines.*
+import java.util.Random
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
@@ -21,6 +22,7 @@ class AutomationAccessibilityService : AccessibilityService() {
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val random = Random()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -62,36 +64,50 @@ class AutomationAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Performs a tap gesture.
-     * Returns TRUE if the system accepted the gesture, FALSE otherwise.
+     * SIMULATE HARDWARE PRESS:
+     * Adds jitter, realistic duration, and micro-movement to mimic a human finger.
+     * This bypasses bot detection and "dead click" issues.
      */
-    suspend fun performClick(x: Float, y: Float): Boolean = suspendCoroutine { continuation ->
-        // Check for invalid coordinates (common error)
+    suspend fun simulateNaturalTap(x: Float, y: Float): Boolean = suspendCoroutine { continuation ->
         if (x < 0 || y < 0) {
             continuation.resume(false)
             return@suspendCoroutine
         }
 
-        val path = Path().apply { moveTo(x, y) }
+        // 1. ADD HUMAN JITTER (+/- 5 pixels)
+        // Real fingers never hit the exact same pixel twice.
+        val jitterX = x + (random.nextInt(10) - 5)
+        val jitterY = y + (random.nextInt(10) - 5)
+
+        // 2. CREATE MICRO-MOVEMENT PATH
+        // A "hardware" tap is rarely a single point; it's a tiny streak.
+        val path = Path().apply {
+            moveTo(jitterX, jitterY)
+            // Move 2 pixels to simulate the finger pad rolling
+            lineTo(jitterX + 2, jitterY + 2)
+        }
         
-        // Click duration 50ms is standard for taps
+        // 3. REALISTIC DURATION (80ms - 130ms)
+        // Instant (0ms) clicks are ignored by games.
+        val duration = (80 + random.nextInt(50)).toLong()
+
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 50))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
 
         val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                Log.d("AUTO_SERVICE", "Click Completed at $x, $y")
+                Log.d("AUTO_SERVICE", "Hardware Tap: $jitterX, $jitterY ($duration ms)")
                 continuation.resume(true)
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.d("AUTO_SERVICE", "Click Cancelled at $x, $y")
+                Log.d("AUTO_SERVICE", "Tap Cancelled")
                 continuation.resume(false)
             }
         }, null)
 
         if (!dispatched) {
-            Log.e("AUTO_SERVICE", "System rejected gesture dispatch")
+            Log.e("AUTO_SERVICE", "System rejected gesture")
             continuation.resume(false)
         }
     }
