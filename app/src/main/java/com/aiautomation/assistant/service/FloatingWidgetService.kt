@@ -192,7 +192,7 @@ class FloatingWidgetService : Service() {
             }
             startService(intent)
         }
-
+    }
     private fun stopAutoMode() {
         Toast.makeText(this, "Auto Mode Stopped", Toast.LENGTH_SHORT).show()
     }
