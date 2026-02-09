@@ -13,7 +13,7 @@
         android:layout_height="120dp"
         android:layout_marginTop="32dp"
         android:contentDescription="App Logo"
-        android:src="@darawable/ic_launcher"
+        android:src="@drawable/ic_launcher"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
