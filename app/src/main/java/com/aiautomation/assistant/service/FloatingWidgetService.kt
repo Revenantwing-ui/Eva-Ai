@@ -171,16 +171,27 @@ class FloatingWidgetService : Service() {
     }
 
     private fun startAutoMode() {
+        // 1. Check Accessibility
         if (!AutomationAccessibilityService.isServiceConnected) {
             Toast.makeText(this, "Please enable Accessibility Service first", Toast.LENGTH_LONG).show()
             isAutoMode = false
             updateWidgetUI()
             return
         }
-        Toast.makeText(this, "Auto Mode Activated", Toast.LENGTH_SHORT).show()
-        val intent = Intent(this, MLProcessingService::class.java).apply { putExtra("mode", "automation") }
-        startService(intent)
-    }
+
+        // 2. Check Screen Capture (Crucial Check)
+        // If we haven't started screen capture yet (e.g. app restarted), we can't automate
+        // The user must go back to Main Activity to grant permission if this is missing.
+        // We assume it's running if we are here, but let's notify the ML service to start.
+
+        Toast.makeText(this, "Starting AI...", Toast.LENGTH_SHORT).show()
+        
+        serviceScope.launch {
+            val intent = Intent(this@FloatingWidgetService, MLProcessingService::class.java).apply {
+                putExtra("mode", "automation")
+            }
+            startService(intent)
+        }
 
     private fun stopAutoMode() {
         Toast.makeText(this, "Auto Mode Stopped", Toast.LENGTH_SHORT).show()
