@@ -13,24 +13,13 @@ import kotlin.math.abs
 
 class PatternRecognitionManager(private val context: Context) {
 
-    /**
-     * MAIN BRAIN: Analyzes the screen for matches
-     */
     suspend fun analyzeScreen(bitmap: Bitmap, uiNodes: List<UIContextNode>): ActionSequence? {
         return withContext(Dispatchers.Default) {
-            
-            // 1. Check for Menu Buttons (Play, Continue, etc.)
-            // We prioritize text buttons to navigate menus automatically.
             val smartAction = findSmartAction(uiNodes)
-            if (smartAction != null) {
-                return@withContext smartAction
-            }
+            if (smartAction != null) return@withContext smartAction
 
-            // 2. Check for Domino Matches (Hand-to-Board)
             val matchAction = findDominoMatch(bitmap)
-            if (matchAction != null) {
-                return@withContext matchAction
-            }
+            if (matchAction != null) return@withContext matchAction
             
             return@withContext null
         }
@@ -64,29 +53,20 @@ class PatternRecognitionManager(private val context: Context) {
         return null
     }
 
-    /**
-     * DOMINO LOGIC: Finds a tile on the board that matches the color of the hand tile.
-     */
     private fun findDominoMatch(bitmap: Bitmap): ActionSequence? {
         val width = bitmap.width
         val height = bitmap.height
         
-        // ZONE 1: Hand (Bottom Center)
         val handX = width / 2
-        val handY = (height * 0.88).toInt() // Approx 88% down
+        val handY = (height * 0.88).toInt()
         
-        // ZONE 2: Board (Top 75%)
         val boardBottom = (height * 0.75).toInt()
         val boardTop = (height * 0.15).toInt()
 
         try {
-            // Get color of the player's current tile
             val handColor = getAverageColor(bitmap, handX, handY, 40)
-            
-            // If hand is empty (black/dark), do nothing
             if (handColor.brightness < 0.2f) return null
 
-            // Scan board for matching color
             val rows = 12
             val cols = 8
             val cellW = width / cols
@@ -116,7 +96,6 @@ class PatternRecognitionManager(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        
         return null
     }
 
@@ -144,19 +123,18 @@ class PatternRecognitionManager(private val context: Context) {
             (rSum/count).toInt(), 
             (gSum/count).toInt(), 
             (bSum/count).toInt(), 
-            ((rSum+gSum+bSum)/count)/765f // Brightness approx
+            ((rSum+gSum+bSum)/count)/765f
         )
     }
 
     private fun areColorsSimilar(c1: ColorSignature, c2: ColorSignature): Boolean {
-        // Threshold 35 allows for slight lighting/shadow differences
         val diff = abs(c1.r - c2.r) + abs(c1.g - c2.g) + abs(c1.b - c2.b)
         return diff < 35 
     }
 
     data class ColorSignature(val r: Int, val g: Int, val b: Int, val brightness: Float)
     
-    // Legacy stubs required by app structure
+    // Legacy stubs
     suspend fun recognizePatterns(bitmap: Bitmap): List<RecognizedPattern> = emptyList()
     suspend fun updateModel(actions: List<ActionSequence>) {}
     suspend fun processFrame(bitmap: Bitmap) {}
