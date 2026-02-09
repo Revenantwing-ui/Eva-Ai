@@ -42,9 +42,14 @@ class MLProcessingService : Service() {
     private fun startAutomationMode() {
         if (processingMode == ProcessingMode.AUTOMATION) return
         processingMode = ProcessingMode.AUTOMATION
-        showToast("Auto Mode Started")
+        
+        showToast("Initializing Midas...")
         
         automationJob = serviceScope.launch {
+            // Load model (might take time if copying file)
+            patternRecognition.loadMidasModel()
+            showToast("Midas Active. Thinking...")
+            
             executeAutomation()
         }
     }
@@ -52,14 +57,12 @@ class MLProcessingService : Service() {
     private fun stopProcessing() {
         processingMode = ProcessingMode.IDLE
         automationJob?.cancel()
-        showToast("Auto Mode Stopped")
+        showToast("Midas Stopped")
     }
 
     private suspend fun executeAutomation() {
-        // FIX: Using the property 'instance' instead of function 'getInstance()'
         val accessibilityService = AutomationAccessibilityService.instance
         
-        // FIX: Using 'isServiceConnected' instead of 'isServiceEnabled()'
         if (accessibilityService == null || !AutomationAccessibilityService.isServiceConnected) {
             showToast("Error: Accessibility Service Not Connected")
             stopProcessing()
@@ -68,38 +71,37 @@ class MLProcessingService : Service() {
 
         while (processingMode == ProcessingMode.AUTOMATION) {
             try {
-                val screenshot = ScreenCaptureService.latestScreenshot
-                if (screenshot == null) {
-                    delay(1000)
+                // 1. Get Context
+                val uiContext = accessibilityService.captureScreenContext()
+                
+                if (uiContext.isEmpty()) {
+                    delay(500)
                     continue
                 }
 
-                val uiContext = accessibilityService.captureScreenContext()
+                // 2. Analyze
+                // Use a dummy bitmap for now as we are text-focused
+                val dummyBitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+                val nextAction = patternRecognition.analyzeScreen(dummyBitmap, uiContext)
                 
-                // Pass data to brain
-                val nextAction = patternRecognition.analyzeScreen(screenshot, uiContext)
-                
+                // 3. Act
                 if (nextAction != null) {
-                    showToast(nextAction.text ?: "Clicking...")
-                    executeAction(nextAction, accessibilityService)
-                    delay(1500) // Wait for game animation
+                    showToast(nextAction.text ?: "Acting...")
+                    
+                    if (nextAction.actionType == "CLICK" && nextAction.x != null && nextAction.y != null) {
+                        accessibilityService.simulateNaturalTap(nextAction.x, nextAction.y)
+                        // Give app time to respond
+                        delay(2500) 
+                    }
                 }
                 
-                delay(500) 
+                // Thinking interval
+                delay(1000) 
                 
             } catch (e: Exception) {
                 e.printStackTrace()
                 delay(1000)
             }
-        }
-    }
-
-    private suspend fun executeAction(
-        action: ActionSequence,
-        accessibilityService: AutomationAccessibilityService
-    ) {
-        if (action.actionType == "CLICK" && action.x != null && action.y != null) {
-            accessibilityService.simulateNaturalTap(action.x, action.y)
         }
     }
 
