@@ -1,6 +1,7 @@
 package com.aiautomation.assistant
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
@@ -12,24 +13,37 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.aiautomation.assistant.databinding.ActivityMainBinding
 import com.aiautomation.assistant.service.FloatingWidgetService
 import com.aiautomation.assistant.util.PermissionHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var mediaProjectionManager: MediaProjectionManager? = null
 
-    // Screen capture permission launcher
+    // --- LAUNCHERS ---
+
+    // 1. Model File Picker (The "Settings" Feature)
+    private val modelPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let { importModelFile(it) }
+    }
+
+    // 2. Screen Capture Permission
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             result.data?.let { data ->
-                // Start floating widget service with screen capture permission
                 val intent = Intent(this, FloatingWidgetService::class.java).apply {
                     putExtra("resultCode", result.resultCode)
                     putExtra("data", data)
@@ -39,8 +53,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     startService(intent)
                 }
-                
-                Toast.makeText(this, "Automation started! Use the floating widget to control.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Automation Started!", Toast.LENGTH_LONG).show()
                 finish()
             }
         } else {
@@ -48,27 +61,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Overlay permission launcher
+    // 3. Overlay Permission
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
         if (Settings.canDrawOverlays(this)) {
             requestScreenCapturePermission()
-        } else {
-            Toast.makeText(this, "Overlay permission is required", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Notification permission launcher (Android 13+)
+    // 4. Notification Permission
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            checkOverlayPermission()
-        } else {
-            Toast.makeText(this, "Notification permission recommended for service", Toast.LENGTH_SHORT).show()
-            checkOverlayPermission()
-        }
+    ) { _ ->
+        checkOverlayPermission()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,35 +90,102 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupUI() {
         binding.apply {
+            // Start Button
             btnStartAutomation.setOnClickListener {
                 startAutomation()
             }
 
+            // Accessibility Button
             btnAccessibilitySettings.setOnClickListener {
                 openAccessibilitySettings()
             }
 
+            // View Patterns (Toast only for now as it's dev-only)
             btnViewPatterns.setOnClickListener {
-                // TODO: Open pattern viewer activity
-                Toast.makeText(this@MainActivity, "Pattern viewer coming soon", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Logging patterns to internal DB", Toast.LENGTH_SHORT).show()
             }
 
+            // SETTINGS BUTTON -> Opens Model Picker
             btnSettings.setOnClickListener {
-                // TODO: Open settings activity
-                Toast.makeText(this@MainActivity, "Settings coming soon", Toast.LENGTH_SHORT).show()
+                showModelPickerDialog()
             }
         }
-
         updateServiceStatus()
+    }
+
+    private fun showModelPickerDialog() {
+        val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val currentModel = prefs.getString("model_path", "Default (midas_model.bin)")
+
+        AlertDialog.Builder(this)
+            .setTitle("Midas Brain Configuration")
+            .setMessage("Current Brain:\n$currentModel\n\nTo change the brain, select a compatible .bin file (e.g., gemma-2b-it-gpu-int4.bin).")
+            .setPositiveButton("Select .bin File") { _, _ ->
+                // Launch file picker for any file type (bin often has no mime type)
+                modelPickerLauncher.launch(arrayOf("*/*"))
+            }
+            .setNeutralButton("Reset to Default") { _, _ ->
+                prefs.edit().remove("model_path").remove("use_custom_model").apply()
+                updateServiceStatus()
+                Toast.makeText(this, "Reset to default model", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun importModelFile(uri: Uri) {
+        val progressDialog = AlertDialog.Builder(this)
+            .setTitle("Importing Brain...")
+            .setMessage("Optimizing model for 4GB RAM usage.\nPlease wait...")
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Determine file name
+                var fileName = "custom_model.bin"
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) fileName = cursor.getString(nameIndex)
+                    }
+                }
+
+                // Stream copy to internal storage
+                val inputStream = contentResolver.openInputStream(uri)
+                val destFile = File(filesDir, fileName)
+                
+                inputStream?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+
+                // Save Preference
+                getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
+                    .putString("model_path", fileName)
+                    .putBoolean("use_custom_model", true)
+                    .apply()
+
+                withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    updateServiceStatus()
+                    Toast.makeText(this@MainActivity, "Brain Imported: $fileName", Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    progressDialog.dismiss()
+                    Toast.makeText(this@MainActivity, "Import Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun checkPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 return
             }
@@ -123,13 +196,10 @@ class MainActivity : AppCompatActivity() {
     private fun checkOverlayPermission() {
         if (!Settings.canDrawOverlays(this)) {
             AlertDialog.Builder(this)
-                .setTitle("Overlay Permission Required")
-                .setMessage("This app needs permission to display over other apps for the floating widget.")
+                .setTitle("Permission Required")
+                .setMessage("Midas needs 'Display Over Other Apps' to function.")
                 .setPositiveButton("Grant") { _, _ ->
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
-                    )
+                    val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                     overlayPermissionLauncher.launch(intent)
                 }
                 .setNegativeButton("Cancel", null)
@@ -144,32 +214,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAutomation() {
-        // Check if accessibility service is enabled
         if (!PermissionHelper.isAccessibilityServiceEnabled(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("Accessibility Service Required")
-                .setMessage("Please enable the Automation Accessibility Service to use touch automation features.")
-                .setPositiveButton("Open Settings") { _, _ ->
-                    openAccessibilitySettings()
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
+            Toast.makeText(this, "Enable Accessibility Service first", Toast.LENGTH_LONG).show()
+            openAccessibilitySettings()
             return
         }
-
-        // Check overlay permission
         if (!Settings.canDrawOverlays(this)) {
             checkOverlayPermission()
             return
         }
-
-        // Request screen capture permission
         requestScreenCapturePermission()
     }
 
     private fun openAccessibilitySettings() {
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        startActivity(intent)
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun updateServiceStatus() {
@@ -177,17 +235,12 @@ class MainActivity : AppCompatActivity() {
         val isAccessibilityEnabled = PermissionHelper.isAccessibilityServiceEnabled(this)
 
         binding.apply {
-            tvServiceStatus.text = if (isRunning) {
-                "Status: Running"
-            } else {
-                "Status: Not Running"
-            }
-
-            tvAccessibilityStatus.text = if (isAccessibilityEnabled) {
-                "Accessibility: Enabled ✓"
-            } else {
-                "Accessibility: Disabled (Required for automation)"
-            }
+            tvServiceStatus.text = if (isRunning) "Status: Running" else "Status: Stopped"
+            tvAccessibilityStatus.text = if (isAccessibilityEnabled) "Accessibility: Active" else "Accessibility: Disabled"
+            
+            val prefs = getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            val modelName = prefs.getString("model_path", "Default (midas_model.bin)")
+            tvAppSubtitle.text = "Active Brain: $modelName"
         }
     }
 
