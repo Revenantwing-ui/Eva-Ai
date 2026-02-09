@@ -6,16 +6,21 @@ plugins {
 
 android {
     namespace 'com.aiautomation.assistant'
-    compileSdk 35 // Updated for Android 15
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.aiautomation.assistant"
         minSdk 33
-        targetSdk 35 // Updated for Android 15
-        versionCode 1
-        versionName "1.0"
+        targetSdk 35
+        versionCode 5
+        versionName "5.0-MIDAS-FINAL"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Do not compress bin files so they can be memory-mapped if needed
+    aaptOptions {
+        noCompress "bin"
     }
 
     buildTypes {
@@ -37,36 +42,40 @@ android {
     buildFeatures {
         viewBinding true
         mlModelBinding true
+        buildConfig true
     }
 }
 
 dependencies {
-    implementation 'androidx.core:core-ktx:1.12.0'
+    // Core Android
+    implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'com.google.android.material:material:1.12.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-    implementation 'androidx.lifecycle:lifecycle-service:2.7.0'
+    
+    // Lifecycle & Service
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.0'
+    implementation 'androidx.lifecycle:lifecycle-service:2.8.0'
+    
+    // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     
-    // TensorFlow Lite
-    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
-    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
-    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
-    implementation 'org.tensorflow:tensorflow-lite-task-vision:0.4.4'
+    // MIDAS BRAIN: MediaPipe GenAI
+    implementation 'com.google.mediapipe:tasks-genai:0.10.14'
     
-    // Room
+    // Database (Room)
     implementation 'androidx.room:room-runtime:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'
     kapt 'androidx.room:room-compiler:2.6.1'
     
-    implementation 'androidx.work:work-runtime-ktx:2.9.0'
-    implementation 'androidx.camera:camera-core:1.3.1'
-    implementation 'androidx.camera:camera-lifecycle:1.3.1'
+    // Utils
     implementation 'com.google.code.gson:gson:2.10.1'
     implementation 'androidx.preference:preference-ktx:1.2.1'
     
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+    // Camera (Legacy/Vision Support)
+    implementation 'androidx.camera:camera-core:1.3.1'
+    implementation 'androidx.camera:camera-lifecycle:1.3.1'
+    
+    // Work Manager
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
 }
